@@ -75,6 +75,18 @@ def mf_li_rohf():
     return mf
 
 
+# open shell with more than one atom: on a single atom every weight is 1.0 by
+# arithmetic, so partition of unity cannot fail there
+@pytest.fixture
+def mf_oh():
+    mol = gto.M(
+        verbose=0, output=None, spin=1, basis="sto-3g", atom="O 0 0 0; H 0 0 1.8",
+        unit="bohr"
+    )
+    mf = scf.UHF(mol).run()
+    return mf
+
+
 # testing functions in decodense.py
 
 
@@ -249,10 +261,12 @@ def test_sanity_check_accepts_valid_input(kwargs):
 
 # dim
 def test_dim():
-    mo_occ = (np.array([1.0, 1.0, 0.0]), np.array([1.0, 0.0, 0.0]))
+    # negative occupation (ndo) exercises np.abs; the gap keeps the indices from
+    # coinciding with arange(count), which a count-based bug would return
+    mo_occ = (np.array([1.0, 0.0, -0.5, 1.0]), np.array([0.0, 0.8, 0.0]))
     alpha, beta = dim(mo_occ)
-    assert np.array_equal(alpha, [0, 1])
-    assert np.array_equal(beta, [0])
+    assert np.array_equal(alpha, [0, 2, 3])
+    assert np.array_equal(beta, [1])
 
 
 # mf_info
@@ -260,32 +274,35 @@ def test_mf_info_h2o(mf_h2o):
     mo_coeff, mo_occ = mf_info(mf_h2o)
     assert np.array_equal(mo_occ[0], np.ones(5))
     assert np.array_equal(mo_occ[1], np.ones(5))
-    assert mo_coeff[0].shape[1] == 5
-    assert mo_coeff[1].shape[1] == 5
+    # the right columns, not just the right number of them
+    assert np.array_equal(mo_coeff[0], mf_h2o.mo_coeff[:, mf_h2o.mo_occ > 0.0])
+    assert np.array_equal(mo_coeff[1], mf_h2o.mo_coeff[:, mf_h2o.mo_occ > 1.0])
 
 
+# unrestricted
 def test_mf_info_li(mf_li):
     mo_coeff, mo_occ = mf_info(mf_li)
     assert np.array_equal(mo_occ[0], np.ones(2))
     assert np.array_equal(mo_occ[1], np.ones(1))
-    assert mo_coeff[0].shape[1] == 2
-    assert mo_coeff[1].shape[1] == 1
+    assert np.array_equal(mo_coeff[0], mf_li.mo_coeff[0][:, mf_li.mo_occ[0] > 0.0])
+    assert np.array_equal(mo_coeff[1], mf_li.mo_coeff[1][:, mf_li.mo_occ[1] > 0.0])
 
 
+# restricted open-shell
 def test_mf_info_li_rohf(mf_li_rohf):
     mo_coeff, mo_occ = mf_info(mf_li_rohf)
     assert np.array_equal(mo_occ[0], np.ones(2))
     assert np.array_equal(mo_occ[1], np.ones(1))
-    assert mo_coeff[0].shape[1] == 2
-    assert mo_coeff[1].shape[1] == 1
+    assert np.array_equal(mo_coeff[0], mf_li_rohf.mo_coeff[:, mf_li_rohf.mo_occ > 0.0])
+    assert np.array_equal(mo_coeff[1], mf_li_rohf.mo_coeff[:, mf_li_rohf.mo_occ > 1.0])
 
 
 # make_rdm1
 def test_make_rdm1():
-    mo = np.array([[1.0], [0.0]])
-    occup = np.array([2.0])
+    mo = np.array([[1.0, 0.0], [1.0, 2.0]])
+    occup = np.array([2.0, 1.0])
     rdm = make_rdm1(mo, occup)
-    assert np.array_equal(rdm, [[2.0, 0.0], [0.0, 0.0]])
+    assert np.array_equal(rdm, [[2.0, 2.0], [2.0, 6.0]])
 
 
 def test_make_rdm1_equal_electron_count(mf_h2o):
@@ -399,13 +416,7 @@ def test_xc_ao_deriv(xc_func, expected):
     assert _xc_ao_deriv(xc_func) == expected
 
 
-# this pins current *buggy* behaviour on purpose: _xc_ao_deriv has no else branch,
-# so an unrecognised xc_type leaves ao_deriv unassigned and the return line raises
-# UnboundLocalError instead of a clear message. if someone later adds a proper
-# `else: raise ValueError(...)`, this test SHOULD go red -- update it to expect
-# ValueError, don't revert the fix.
-# the mock is needed because no real functional can produce this: pyscf's xc_type
-# only ever returns HF/LDA/GGA/MGGA/UNKNOWN, and UNKNOWN is unreachable in practice
+
 def test_xc_ao_deriv_unknown_type():
     with patch("pyscf.dft.libxc.xc_type", return_value="UNKNOWN"):
         with pytest.raises(UnboundLocalError):
@@ -435,7 +446,7 @@ def test_make_rho_gga(mf_h2o_dft):
     assert np.allclose(rho, rho_ref, atol=1e-10)
 
 
-# _make_rho_interm2 (atom-slicing, the decodense-specific reuse trick)
+# _make_rho_interm2 
 def test_make_rho_atom_slicing(mf_h2o):
     mol = mf_h2o.mol
     grids = dft.Grids(mol)
@@ -480,14 +491,14 @@ def test_trace_symmetric():
 def test_trace_3d():
     op = np.array(
         [
-            [[1.0, 0.0], [0.0, 0.0]],
-            [[0.0, 0.0], [0.0, 1.0]],
-            [[2.0, 0.0], [0.0, 3.0]],
+            [[1.0, 2.0], [3.0, 4.0]],
+            [[0.0, 1.0], [1.0, 0.0]],
+            [[1.0, 0.0], [0.0, 1.0]],
         ]
     )
-    rdm1 = np.eye(2)
-    expected = np.array([1.0, 1.0, 5.0])
-    assert np.array_equal(_trace(op, rdm1), expected)
+    rdm1 = np.array([[2.0, 1.0], [1.0, 3.0]])
+    assert np.array_equal(_trace(op, rdm1), [19.0, 2.0, 5.0])
+    assert np.array_equal(_trace(op, rdm1, scaling=0.5), [9.5, 1.0, 2.5])
 
 
 
@@ -495,20 +506,21 @@ def test_trace_3d():
 
 
 # _population_mul
-def test_population_mul_h2o(mf_h2o):
-    mol = mf_h2o.mol
-    ovlp = mf_h2o.get_ovlp()
-    ao_labels = mol.ao_labels(fmt=None)
-    mo = mf_h2o.mo_coeff[:, :5]
-    mocc = mf_h2o.mo_occ[:5]
-    overlap_mo = np.einsum("ji,jp->ip", ovlp, mo)
-    pop = mocc[None, :] * mo * overlap_mo
-    populations = _population_mul(mol.natm, ao_labels, pop)
-    assert np.isclose(populations.sum(), 10.0)
-    # symmetry-equivalent
-    per_atom = populations.sum(axis=0)
-    assert np.isclose(per_atom[1], per_atom[2])
-    assert per_atom[0] > per_atom[1]
+def test_population_mul():
+    mol = gto.M(verbose=0, basis="sto-3g", symmetry=True, atom="geom/h2o.xyz")
+    pop = np.array(
+        [
+            [1.0, 10.0],
+            [2.0, 20.0],
+            [3.0, 30.0],
+            [4.0, 40.0],
+            [5.0, 50.0],
+            [6.0, 60.0],
+            [7.0, 70.0],
+        ]
+    )
+    populations = _population_mul(mol.natm, mol.ao_labels(fmt=None), pop)
+    assert np.array_equal(populations, [[15.0, 6.0, 7.0], [150.0, 60.0, 70.0]])
 
 
 # assign_rdm1s
@@ -520,6 +532,10 @@ def test_assign_rdm1s_h2o(mf_h2o):
     assert len(weights) == 2
     assert np.array_equal(weights[1], weights[0])
     assert np.allclose(weights[0].sum(axis=1), 1.0)
+    # the per-atom values, not just that each orbital's weights sum to 1: pyscf
+    # computes mulliken populations from the density matrix by its own route
+    pop_ref = mf_h2o.mol.atom_charges() - mf_h2o.mulliken_pop(verbose=0)[1]
+    assert np.allclose(weights[0].sum(axis=0) + weights[1].sum(axis=0), pop_ref)
 
 
 def test_assign_rdm1s_h2o_iao(mf_h2o):
@@ -532,36 +548,31 @@ def test_assign_rdm1s_h2o_iao(mf_h2o):
     assert np.allclose(weights[0].sum(axis=1), 1.0)
 
 
-def test_assign_rdm1s_li(mf_li):
-    mo_coeff, mo_occ = mf_info(mf_li)
+def test_assign_rdm1s_oh(mf_oh):
+    mo_coeff, mo_occ = mf_info(mf_oh)
     weights = assign_rdm1s(
-        mf_li.mol, mf_li, mo_coeff, mo_occ, "MINAO", "mulliken", False, 0
+        mf_oh.mol, mf_oh, mo_coeff, mo_occ, "MINAO", "mulliken", False, 0
     )
     assert len(weights) == 2
     assert np.allclose(weights[0].sum(axis=1), 1.0)
     assert np.allclose(weights[1].sum(axis=1), 1.0)
-    assert weights[0].shape[0] == 2
-    assert weights[1].shape[0] == 1
+    assert weights[0].shape == (5, 2)
+    assert weights[1].shape == (4, 2)
+    assert not np.allclose(weights[0].sum(axis=0), weights[1].sum(axis=0))
 
 
-def test_assign_rdm1s_li_iao(mf_li):
-    mo_coeff, mo_occ = mf_info(mf_li)
-    weights = assign_rdm1s(
-        mf_li.mol, mf_li, mo_coeff, mo_occ, "MINAO", "iao", False, 0
-    )
+def test_assign_rdm1s_oh_iao(mf_oh):
+    mo_coeff, mo_occ = mf_info(mf_oh)
+    weights = assign_rdm1s(mf_oh.mol, mf_oh, mo_coeff, mo_occ, "MINAO", "iao", False, 0)
     assert len(weights) == 2
     assert np.allclose(weights[0].sum(axis=1), 1.0)
     assert np.allclose(weights[1].sum(axis=1), 1.0)
-    assert weights[0].shape[0] == 2
-    assert weights[1].shape[0] == 1
+    assert weights[0].shape == (5, 2)
+    assert weights[1].shape == (4, 2)
+    assert not np.allclose(weights[0].sum(axis=0), weights[1].sum(axis=0))
 
 
-# partial charges from the iao population weights.
-# expected signs are chemistry, not code: oxygen is the more electronegative atom,
-# so it draws electron density and comes out negative, both hydrogens positive, and
-# the two hydrogens equal by symmetry. the total-charge line is implied by the
-# partition of unity asserted above (10 spin-orbitals, each summing to 1, vs sum(Z)
-# = 10) and is kept as documentation rather than as a load-bearing assert
+# partial charges from the iao population weights
 def test_rdm1_charge_conservation(mf_h2o):
     mol = mf_h2o.mol
     mo_coeff, mo_occ = mf_info(mf_h2o)
@@ -585,12 +596,28 @@ def test_atoms():
         atom="H 0 0 0; O 0 0 1.0", basis="sto-3g", spin=1, unit="bohr", verbose=0
     )
     res = {
-        CompKeys.el: np.array([1.0, 4.0]),  # made-up numbers, one per atom
+        CompKeys.el: np.array([1.0, 4.0]),
+        CompKeys.kin: np.array([2.0, 8.0]),
     }
     df = atoms(mol, res, "au")
     assert len(df) == 2
     assert list(df.index) == ["H0", "O1"]
     assert np.allclose(df[CompKeys.el], [1.0, 4.0])
+    assert np.allclose(df[CompKeys.kin], [2.0, 8.0])
+    # au leaves values alone, so the * scaling is only visible in another unit
+    df_ev = atoms(mol, res, "ev")
+    assert np.allclose(df_ev[CompKeys.el], np.array([1.0, 4.0]) * 27.211386245988)
+
+
+# dipole input takes the other branch, splitting into x/y/z columns
+def test_atoms_dipole():
+    mol = gto.M(
+        atom="H 0 0 0; O 0 0 1.0", basis="sto-3g", spin=1, unit="bohr", verbose=0
+    )
+    res = {CompKeys.el: np.array([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])}
+    df = atoms(mol, res, "au")
+    assert list(df.columns) == ["Elect. (x)", "Elect. (y)", "Elect. (z)"]
+    assert np.allclose(df.values, [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
 
 
 # to_dataframe
@@ -601,12 +628,13 @@ def test_to_dataframe(mf_h2o):
     res1 = main(mol, decomp1, mf_h2o, mo_coeff, mo_occ)
     decomp2 = DecompCls(pop_method="iao", part="orbitals")
     res2 = main(mol, decomp2, mf_h2o, mo_coeff, mo_occ)
+    decomp3 = DecompCls(pop_method="iao", part="atoms", unit="ev")
+    res3 = main(mol, decomp3, mf_h2o, mo_coeff, mo_occ)
     assert len(res1.to_dataframe()) == 3
     assert len(res2.to_dataframe()) == 10
-    # __str__ is the path every example uses via print(res), and is where the
-    # leftover charge_atom reference crashed. nothing else in the suite runs it
     assert "O0" in str(res1)
-    assert len(str(res2).splitlines()) > 10
+    assert np.allclose(res1.to_dataframe()[CompKeys.tot], res1.tot)
+    assert np.allclose(res3.to_dataframe()[CompKeys.tot], res1.tot * 27.211386245988)
 
 
 # orbs --  NDO 
@@ -615,13 +643,18 @@ def test_orbs_ndo():
     res = {
         CompKeys.el: [np.array([1.0, 2.0, 3.0, 4.0, 5.0]), np.array([])],
         CompKeys.mo_occ: (np.array([-0.8, -0.3, 0.0, 0.3, 0.8]), np.array([])),
-        CompKeys.orbsym: (np.array(["A"] * 5, dtype=object), np.array([], dtype=object)),
+        CompKeys.orbsym: (
+            np.array(list("abcde"), dtype=object),
+            np.array([], dtype=object),
+        ),
     }
     df = orbs(mol, res, "au", ndo=True)
-    assert len(df) == 5
-    assert df.iloc[-1][CompKeys.el] == 3.0
-    df1 = orbs(mol, res, "ev", ndo=True)
-    assert np.isclose(df1.iloc[-1][CompKeys.el], 3.0 * 27.211386245988)
+    assert np.allclose(df[CompKeys.el], [1.0, 5.0, 2.0, 4.0, 3.0])
+    assert np.allclose(df[CompKeys.mo_occ], [-0.8, 0.8, -0.3, 0.3, 0.0])
+    df_ev = orbs(mol, res, "ev", ndo=True)
+    assert np.allclose(
+        df_ev[CompKeys.el], np.array([1.0, 5.0, 2.0, 4.0, 3.0]) * 27.211386245988
+    )
 
 
 # DecompCls 
@@ -633,6 +666,10 @@ def test_decomp_cls_part_method_defaults():
     assert decomp_atoms.part_method == "mo"
     decomp_orb = DecompCls(part="orbitals")
     assert decomp_orb.part_method is None
+    # an explicitly given part_method must survive, not be overwritten by the default
+    assert DecompCls(part="atoms", part_method="ao").part_method == "ao"
+    # eda overrides even an explicit part_method, since eda is the ao scheme
+    assert DecompCls(part="eda", part_method="mo").part_method == "ao"
 
 
 # pbctools.py (no tests yet) 
