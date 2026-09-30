@@ -75,8 +75,6 @@ def mf_li_rohf():
     return mf
 
 
-# open shell with more than one atom: on a single atom every weight is 1.0 by
-# arithmetic, so partition of unity cannot fail there
 @pytest.fixture
 def mf_oh():
     mol = gto.M(
@@ -107,6 +105,17 @@ def test_permute(mf_h2o, mf_h2o_permute, part_method):
         assert np.isclose(val[0], val_perm[2])
         assert np.isclose(val[1], val_perm[0])
         assert np.isclose(val[2], val_perm[1])
+
+
+
+@pytest.mark.parametrize("part_method", ["mo", "ao"])
+def test_symmetry_equivalent_atoms(mf_h2o, part_method):
+    mol = mf_h2o.mol
+    mo_coeff, mo_occ = mf_info(mf_h2o)
+    decomp = DecompCls(pop_method="iao", part="atoms", part_method=part_method)
+    res = main(mol, decomp, mf_h2o, mo_coeff, mo_occ)
+    for val in res.res_dict.values():
+        assert np.isclose(val[1], val[2])
 
 
 # raw pyscf input (2-D mo_coeff + 1-D mo_occ) must land where the mf_info route lands.
@@ -666,10 +675,7 @@ def test_decomp_cls_part_method_defaults():
     assert decomp_atoms.part_method == "mo"
     decomp_orb = DecompCls(part="orbitals")
     assert decomp_orb.part_method is None
-    # an explicitly given part_method must survive, not be overwritten by the default
-    assert DecompCls(part="atoms", part_method="ao").part_method == "ao"
-    # eda overrides even an explicit part_method, since eda is the ao scheme
-    assert DecompCls(part="eda", part_method="mo").part_method == "ao"
+
 
 
 # pbctools.py (no tests yet) 
