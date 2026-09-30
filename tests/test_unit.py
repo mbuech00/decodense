@@ -66,6 +66,7 @@ def mf_li():
     mf = scf.UHF(mol).run()
     return mf
 
+
 @pytest.fixture
 def mf_li_rohf():
     mol = gto.M(
@@ -78,8 +79,12 @@ def mf_li_rohf():
 @pytest.fixture
 def mf_oh():
     mol = gto.M(
-        verbose=0, output=None, spin=1, basis="sto-3g", atom="O 0 0 0; H 0 0 1.8",
-        unit="bohr"
+        verbose=0,
+        output=None,
+        spin=1,
+        basis="sto-3g",
+        atom="O 0 0 0; H 0 0 1.8",
+        unit="bohr",
     )
     mf = scf.UHF(mol).run()
     return mf
@@ -105,7 +110,6 @@ def test_permute(mf_h2o, mf_h2o_permute, part_method):
         assert np.isclose(val[0], val_perm[2])
         assert np.isclose(val[1], val_perm[0])
         assert np.isclose(val[2], val_perm[1])
-
 
 
 @pytest.mark.parametrize("part_method", ["mo", "ao"])
@@ -134,8 +138,8 @@ def test_main_orbitals_non_aufbau(mf_h2o):
     mol = mf_h2o.mol
     mf_u = scf.UHF(mol).run()
     occ_a = mf_u.mo_occ[0].copy()
-    occ_a[4] = 0.0  
-    occ_a[5] = 1.0  
+    occ_a[4] = 0.0
+    occ_a[5] = 1.0
     occ_b = mf_u.mo_occ[1].copy()
     decomp = DecompCls(pop_method="iao", part="orbitals")
     res = main(mol, decomp, mf_u, mf_u.mo_coeff, (occ_a, occ_b))
@@ -174,7 +178,10 @@ def test_main_dipole(mf_h2o, part_method):
     )
     res1 = main(mol, decomp1, mf_h2o, mo_coeff, mo_occ)
     decomp2 = DecompCls(
-        pop_method="iao", part="atoms", part_method=part_method, prop="dipole",
+        pop_method="iao",
+        part="atoms",
+        part_method=part_method,
+        prop="dipole",
         gauge_origin=[1.0, 0.0, 0.0],
     )
     res2 = main(mol, decomp2, mf_h2o, mo_coeff, mo_occ)
@@ -238,7 +245,7 @@ def test_sanity_check_gauge_origin_invalid(bad_gauge_origin, exception):
             (np.zeros((2, 2)),),
             TypeError,
             "invalid mo coefficients",
-        ), 
+        ),
     ],
 )
 def test_sanity_check_rejects_invalid_mo_coeff(mo_coeff, exception, message):
@@ -405,7 +412,9 @@ def test_get_nuc_matches_pyscf():
 # _point_charges
 def test_point_charges():
     mol = gto.M(atom="Li 0 0 0; H 0 0 1", basis="sto-3g", unit="bohr", verbose=0)
-    mm_mol = gto.M(atom="O 0 0 3; H 0 0 5", basis="sto-3g", spin=1, unit="bohr", verbose=0)
+    mm_mol = gto.M(
+        atom="O 0 0 3; H 0 0 5", basis="sto-3g", spin=1, unit="bohr", verbose=0
+    )
     mm_pot, nuc_solv = _point_charges(mol, mm_mol)
     assert nuc_solv.shape == (mol.natm,)
     assert np.allclose(nuc_solv, [3 * (8 / 3 + 1 / 5), 1 * (8 / 2 + 1 / 4)])
@@ -445,7 +454,6 @@ def test_xc_ao_deriv(xc_func, expected):
     assert _xc_ao_deriv(xc_func) == expected
 
 
-
 def test_xc_ao_deriv_unknown_type():
     with patch("pyscf.dft.libxc.xc_type", return_value="UNKNOWN"):
         with pytest.raises(UnboundLocalError):
@@ -475,7 +483,7 @@ def test_make_rho_gga(mf_h2o_dft):
     assert np.allclose(rho, rho_ref, atol=1e-10)
 
 
-# _make_rho_interm2 
+# _make_rho_interm2
 def test_make_rho_atom_slicing(mf_h2o):
     mol = mf_h2o.mol
     grids = dft.Grids(mol)
@@ -528,7 +536,6 @@ def test_trace_3d():
     rdm1 = np.array([[2.0, 1.0], [1.0, 3.0]])
     assert np.array_equal(_trace(op, rdm1), [19.0, 2.0, 5.0])
     assert np.array_equal(_trace(op, rdm1, scaling=0.5), [9.5, 1.0, 2.5])
-
 
 
 # testing functions in orbitals.py
@@ -666,7 +673,7 @@ def test_to_dataframe(mf_h2o):
     assert np.allclose(res3.to_dataframe()[CompKeys.tot], res1.tot * 27.211386245988)
 
 
-# orbs --  NDO 
+# orbs --  NDO
 def test_orbs_ndo():
     mol = gto.M(atom="H 0 0 0", basis="sto-3g", spin=1, unit="bohr", verbose=0)
     res = {
@@ -686,7 +693,7 @@ def test_orbs_ndo():
     )
 
 
-# DecompCls 
+# DecompCls
 def test_decomp_cls_part_method_defaults():
     decomp_eda = DecompCls(part="eda")
     assert decomp_eda.part == "atoms"
@@ -697,5 +704,4 @@ def test_decomp_cls_part_method_defaults():
     assert decomp_orb.part_method is None
 
 
-
-# pbctools.py (no tests yet) 
+# pbctools.py (no tests yet)

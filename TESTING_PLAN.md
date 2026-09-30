@@ -1680,10 +1680,10 @@ Grouped. Suggested order: **A before B**. A decides whether any of B runs in CI.
       ready; not yet opened.
 
 **B. New tests (VIII.5)**. For each: yes / no / later.
-- [x] N1 done · [ ] N2 `main` input normalisation · [x] **N3: done** (test_symmetry_equivalent_atoms, kills M25/M26)
-- [ ] N4 unit scaling · [ ] N5 `write_rdm1` partition (+ xfail?) · [ ] N6 linear H₃
-- [ ] N7 sanity_check rows · [ ] N8 losslessness (depends on A-2) · [ ] N9 dipole
-- [ ] N10–N13 optional
+- [x] N1 done · [x] **N2: partly done, rest declined** (M14 via test_main_accepts_raw_pyscf_input; M35/M15 dead code) · [x] **N3: done** (test_symmetry_equivalent_atoms, kills M25/M26)
+- [x] **N4: done** (test_orbs_ndo + test_atoms, kills M19/M20/M21) · [ ] N5 `write_rdm1` partition — PR note drafted, not yet opened, no test written · [x] **N6: declined by user** (H₃ verified, not adopted)
+- [x] **N7: done** (T6 + T9 rows, kills M33; M23 remains a deliberate declined gap) · [ ] N8 losslessness (depends on A-2, deferred with CI decision) · [x] **N9: done** (test_main_dipole, gauge invariance + pyscf reference)
+- [ ] N10–N13 optional, not started
 
 **C. Changes to existing tests (VIII.4)**. For each: yes / no.
 - [x] **T1 permute: done** (all keys + parametrized over `mo`/`ao` + `mo_occ` passed) · [x] **T2: done** (occupied columns, parens fixed, raw-pyscf route test added — kills M14; 3-D branch M35 + fractional occ M15 declined, dead code paths)
