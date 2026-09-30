@@ -162,6 +162,26 @@ def test_nuc_sum(mf_h2o, part_method):
     assert np.isclose((res.nuc_att_glob + res.nuc_att_loc).sum(), total_nuc_att)
 
 
+# total dipole moment through the full pipeline, not just _dip_nuc in isolation.
+# for a neutral molecule the total must be independent of the gauge origin, and
+# must equal pyscf's own dip_moment
+@pytest.mark.parametrize("part_method", ["mo", "ao"])
+def test_main_dipole(mf_h2o, part_method):
+    mol = mf_h2o.mol
+    mo_coeff, mo_occ = mf_info(mf_h2o)
+    decomp1 = DecompCls(
+        pop_method="iao", part="atoms", part_method=part_method, prop="dipole"
+    )
+    res1 = main(mol, decomp1, mf_h2o, mo_coeff, mo_occ)
+    decomp2 = DecompCls(
+        pop_method="iao", part="atoms", part_method=part_method, prop="dipole",
+        gauge_origin=[1.0, 0.0, 0.0],
+    )
+    res2 = main(mol, decomp2, mf_h2o, mo_coeff, mo_occ)
+    assert np.allclose(res1.tot.sum(axis=0), res2.tot.sum(axis=0))
+    assert np.allclose(res1.tot.sum(axis=0), mf_h2o.dip_moment(unit="au", verbose=0))
+
+
 # decomp.py
 
 
