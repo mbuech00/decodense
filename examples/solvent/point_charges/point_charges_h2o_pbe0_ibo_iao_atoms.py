@@ -49,6 +49,7 @@ mo_coeff = loc.kernel()
 stable, direction = loc.stability_check()
 
 # decomposition
+# default part_method = "mo"
 decomp = decodense.DecompCls(pop_method="iao", part="atoms")
 res = decodense.main(mol, decomp, mf, mo_coeff)
 
